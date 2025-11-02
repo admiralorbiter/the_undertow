@@ -168,7 +168,7 @@ class PipelineRunner:
     
     def step_ner(self, force_recompute=False):
         """
-        Step 8: Named Entity Recognition (P2, but structure here).
+        Step 8: Named Entity Recognition.
         
         Extracts PERSON, ORG, GPE, LOC entities from articles.
         Populates entities and article_entities tables.
@@ -180,21 +180,52 @@ class PipelineRunner:
             dict with stats: {'articles_processed': int, 'entities_found': int}
         """
         logger.info("Step 8: Extracting named entities...")
-        # TODO: Implement in P2
-        # - Load spaCy model (en_core_web_sm)
-        # - For each article:
-        #   - Run NER on title + summary
-        #   - Extract PERSON, ORG, GPE, LOC entities
-        #   - Upsert to entities table
-        #   - Link to articles via article_entities
-        return {'status': 'not_implemented', 'articles_processed': 0, 'entities_found': 0}
+        
+        from backend.services.ner import NERService
+        
+        service = NERService()
+        stats = service.extract_entities(force_recompute=force_recompute)
+        
+        if stats.get('articles_processed', 0) > 0:
+            self.steps_completed.add(8)
+        
+        return stats
+    
+    def step_entity_roles(self, force_recompute=False):
+        """
+        Step 8b: Entity role classification.
+        
+        Classifies entity roles (protagonist, antagonist, subject, adjudicator)
+        in articles based on contextual patterns.
+        
+        Args:
+            force_recompute: If True, recompute even if roles exist
+            
+        Returns:
+            dict with stats: {'roles_classified': int}
+        """
+        logger.info("Step 8b: Classifying entity roles...")
+        
+        from backend.services.ner import NERService
+        
+        service = NERService()
+        stats = service.classify_entity_roles(force_recompute=force_recompute)
+        
+        if stats.get('roles_classified', 0) > 0:
+            # Add to completed steps (use 8.5 as a float to distinguish from 8)
+            # Actually, let's just track it as part of step 8
+            pass
+        
+        return stats
     
     def step_storylines(self, force_recompute=False):
         """
-        Step 9: Storyline threading (P2, but structure here).
+        Step 9: Storyline threading (multi-tier).
         
-        Groups near-duplicate articles using Union-Find.
-        Criteria: cosine >= 0.85 AND date difference <= 3 days.
+        Builds storylines using Union-Find grouping across three tiers:
+        - Tier 1: Near-duplicates (cosine >= 0.85, days <= 3)
+        - Tier 2: Continuations (0.65 <= cosine < 0.85, days <= 7)
+        - Tier 3: Related (0.50 <= cosine < 0.65, shared entities >= 2)
         
         Args:
             force_recompute: If True, recompute even if storylines exist
@@ -202,13 +233,44 @@ class PipelineRunner:
         Returns:
             dict with stats: {'storylines_created': int, 'articles_grouped': int}
         """
-        logger.info("Step 9: Grouping storylines...")
-        # TODO: Implement in P2
-        # - Load similarities with cosine >= 0.85
-        # - Filter by date difference <= 3 days
-        # - Run Union-Find to group articles
-        # - Store storyline groups (could add storylines table later)
-        return {'status': 'not_implemented', 'storylines_created': 0, 'articles_grouped': 0}
+        logger.info("Step 9: Building storylines...")
+        
+        from backend.services.storylines import StorylineService
+        
+        service = StorylineService()
+        stats = service.build_storylines(force_recompute=force_recompute)
+        
+        if stats.get('storylines_created', 0) > 0:
+            self.steps_completed.add(9)
+        
+        return stats
+    
+    def step_monitoring(self, force_recompute=False):
+        """
+        Step 10: Monitoring and anomaly detection.
+        
+        Runs detection algorithms to identify:
+        - Topic surges
+        - Story reactivations
+        - New actor emergence
+        
+        Args:
+            force_recompute: If True, run even if alerts exist
+            
+        Returns:
+            dict with stats: {'alerts_created': int, 'surges': int, 'reactivations': int, 'new_actors': int}
+        """
+        logger.info("Step 10: Running monitoring detections...")
+        
+        from backend.services.monitoring import MonitoringService
+        
+        service = MonitoringService()
+        stats = service.run_detections()
+        
+        if stats.get('alerts_created', 0) > 0:
+            self.steps_completed.add(10)
+        
+        return stats
     
     def run_full_pipeline(self, start_from_step=3, force_recompute=False):
         """
@@ -231,10 +293,11 @@ class PipelineRunner:
             6: self.step_umap,
             7: self.step_keywords,
             8: self.step_ner,
-            9: self.step_storylines
+            9: self.step_storylines,
+            10: self.step_monitoring
         }
         
-        for step_num in range(start_from_step, 10):
+        for step_num in range(start_from_step, 11):
             if step_num in steps:
                 try:
                     result = steps[step_num](force_recompute=force_recompute)
@@ -273,6 +336,8 @@ class PipelineRunner:
             'clusters_count': 0,
             'articles_with_umap': 0,
             'clusters_labeled': 0,
+            'storylines_count': 0,
+            'alerts_count': 0,
             'has_faiss_index': False
         }
         
@@ -296,6 +361,14 @@ class PipelineRunner:
             # Count clusters with labels
             cursor.execute("SELECT COUNT(*) FROM clusters WHERE label IS NOT NULL AND label != ''")
             status['clusters_labeled'] = cursor.fetchone()[0]
+            
+            # Count storylines
+            cursor.execute("SELECT COUNT(*) FROM storylines")
+            status['storylines_count'] = cursor.fetchone()[0]
+            
+            # Count alerts
+            cursor.execute("SELECT COUNT(*) FROM alerts")
+            status['alerts_count'] = cursor.fetchone()[0]
             
             # Check if FAISS index exists
             from pathlib import Path

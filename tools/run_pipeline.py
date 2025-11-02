@@ -46,8 +46,8 @@ Examples:
         '--step',
         type=int,
         default=3,
-        choices=[3, 4, 5, 6, 7, 8, 9],
-        help='Starting step number (3-9, default: 3)'
+        choices=[3, 4, 5, 6, 7, 8, 9, 10],
+        help='Starting step number (3-10, default: 3)'
     )
     
     parser.add_argument(
@@ -79,6 +79,8 @@ Examples:
         print(f"Clusters: {status.get('clusters_count', 0)}")
         print(f"Articles with UMAP coords: {status.get('articles_with_umap', 0)}")
         print(f"Clusters labeled: {status.get('clusters_labeled', 0)}")
+        print(f"Storylines: {status.get('storylines_count', 0)}")
+        print(f"Alerts: {status.get('alerts_count', 0)}")
         print(f"FAISS index exists: {status.get('has_faiss_index', False)}")
         return
     
@@ -116,6 +118,14 @@ Examples:
                     print(f"   Points projected: {result['points_projected']}")
                 if 'clusters_labeled' in result:
                     print(f"   Clusters labeled: {result['clusters_labeled']}")
+                if 'storylines_created' in result:
+                    print(f"   Storylines created: {result['storylines_created']}")
+                    print(f"   Articles grouped: {result.get('articles_grouped', 0)}")
+                if 'alerts_created' in result:
+                    print(f"   Alerts created: {result['alerts_created']}")
+                    print(f"   Surges: {result.get('surges', 0)}")
+                    print(f"   Reactivations: {result.get('reactivations', 0)}")
+                    print(f"   New actors: {result.get('new_actors', 0)}")
                     
             elif status == 'skipped':
                 print(f"[SKIP] Step {step_num}: Skipped (already completed)")
@@ -136,6 +146,8 @@ Examples:
         print(f"Clusters: {final_status.get('clusters_count', 0)}")
         print(f"Articles with UMAP: {final_status.get('articles_with_umap', 0)}")
         print(f"Clusters labeled: {final_status.get('clusters_labeled', 0)}")
+        print(f"Storylines: {final_status.get('storylines_count', 0)}")
+        print(f"Alerts: {final_status.get('alerts_count', 0)}")
         
         print("\n[SUCCESS] Pipeline execution complete!\n")
         

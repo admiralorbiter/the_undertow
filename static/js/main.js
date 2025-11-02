@@ -6,6 +6,8 @@ import { api } from './api.js';
 import { ListView } from './views/list.js';
 import { GalaxyView } from './views/galaxy.js';
 import { TimelineView } from './views/timeline.js';
+import { DashboardView } from './views/dashboard.js';
+import { AlertsView } from './views/alerts.js';
 
 // Application state
 const appState = {
@@ -28,7 +30,7 @@ const appState = {
 };
 
 // Initialize views
-let listView, galaxyView, timelineView;
+let listView, galaxyView, timelineView, dashboardView, alertsView;
 
 /**
  * Initialize the application
@@ -40,6 +42,11 @@ async function init() {
     listView = new ListView(document.getElementById('list-view'));
     galaxyView = new GalaxyView(document.getElementById('galaxy-view'));
     timelineView = new TimelineView(document.getElementById('timeline-view'));
+    dashboardView = new DashboardView(document.getElementById('dashboard-view'));
+    alertsView = new AlertsView(document.getElementById('alerts-view'));
+    
+    // Make alertsView globally accessible for acknowledge function
+    window.alertsView = alertsView;
     
     // Setup event listeners
     setupEventListeners();
@@ -91,6 +98,12 @@ function setupEventListeners() {
     // Listen for timeline filter events
     document.addEventListener('timeline-filter', handleTimelineFilter);
     document.addEventListener('timeline-brush', handleTimelineBrush);
+    
+    // Listen for storyline selection from dashboard
+    document.addEventListener('storyline-selected', handleStorylineSelection);
+    
+    // Listen for entity selection from dashboard
+    document.addEventListener('entity-selected', handleEntitySelection);
 }
 
 /**
@@ -98,6 +111,10 @@ function setupEventListeners() {
  */
 function switchView(viewName) {
     appState.currentView = viewName;
+    
+    // Toggle layout class for dashboard
+    const mainLayout = document.querySelector('.main-layout');
+    mainLayout.classList.toggle('dashboard-active', viewName === 'dashboard' || viewName === 'alerts');
     
     // Update tabs
     document.querySelectorAll('.tab').forEach(tab => {
@@ -120,6 +137,11 @@ function switchView(viewName) {
         timelineView.load();
         // Resize chart after a brief delay to ensure container is visible
         setTimeout(() => timelineView.resize(), 100);
+    } else if (viewName === 'dashboard') {
+        dashboardView.load(30);  // Default 30 days
+        setTimeout(() => dashboardView.resize(), 100);
+    } else if (viewName === 'alerts') {
+        alertsView.load();
     }
 }
 
@@ -137,6 +159,9 @@ window.addEventListener('resize', () => {
     }
     if (timelineView && timelineView.chart) {
         timelineView.resize();
+    }
+    if (dashboardView && dashboardView.charts) {
+        dashboardView.resize();
     }
 });
 
@@ -543,11 +568,149 @@ function formatDate(dateStr) {
     }
 }
 
+/**
+ * Handle storyline selection from dashboard
+ */
+async function handleStorylineSelection(event) {
+    const { storylineId, storyline, articles } = event.detail;
+    
+    console.log(`Filtering by storyline: ${storyline.label}`);
+    
+    // Switch to list view
+    switchView('list');
+    
+    // Clear other filters
+    appState.filters = {
+        q: '',
+        from: '',
+        to: '',
+        outlet: '',
+        cluster_id: null,
+        storyline_id: storylineId
+    };
+    
+    // Update filter panel to show storyline filter
+    const searchQuery = document.getElementById('search-query');
+    if (searchQuery) {
+        searchQuery.value = `Storyline: ${storyline.label}`;
+        searchQuery.disabled = true;
+    }
+    
+    // Fetch and display articles from this storyline
+    try {
+        const articleIds = articles.map(a => a.id);
+        const response = await api.getArticles({ limit: 1000 });
+        const filteredArticles = response.items.filter(a => articleIds.includes(a.id));
+        
+        appState.totalArticles = filteredArticles.length;
+        updateResultsCount();
+        listView.render(filteredArticles);
+        
+        // Show info message
+        const listEl = document.getElementById('articles-list');
+        if (listEl && filteredArticles.length > 0) {
+            listEl.insertAdjacentHTML('afterbegin', `
+                <div class="filter-info" style="background: #eff6ff; border-left: 4px solid #2563eb; padding: 1rem; margin-bottom: 1rem;">
+                    <strong>Filtered by storyline:</strong> ${escapeHtml(storyline.label)} (${filteredArticles.length} articles)
+                    <button onclick="window.clearStorylineFilter()" style="float: right; padding: 0.25rem 0.75rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;">Clear Filter</button>
+                </div>
+            `);
+        }
+    } catch (error) {
+        console.error('Error loading storyline articles:', error);
+    }
+}
+
+/**
+ * Handle entity selection from dashboard
+ */
+async function handleEntitySelection(event) {
+    const { entityId } = event.detail;
+    
+    console.log(`Filtering by entity: ${entityId}`);
+    
+    // Switch to list view
+    switchView('list');
+    
+    try {
+        // Fetch entity timeline (articles mentioning this entity)
+        const response = await fetch(`/api/entities/${entityId}/timeline`);
+        if (!response.ok) throw new Error('Failed to load entity');
+        
+        const data = await response.json();
+        
+        // Clear other filters
+        appState.filters = {
+            q: '',
+            from: '',
+            to: '',
+            outlet: '',
+            cluster_id: null,
+            entity_id: entityId
+        };
+        
+        // Update filter panel
+        const searchQuery = document.getElementById('search-query');
+        if (searchQuery) {
+            searchQuery.value = `Entity: ${data.entity.name}`;
+            searchQuery.disabled = true;
+        }
+        
+        // Fetch full article details
+        const articleIds = data.articles.map(a => a.id);
+        const articlesResponse = await api.getArticles({ limit: 1000 });
+        const filteredArticles = articlesResponse.items.filter(a => articleIds.includes(a.id));
+        
+        appState.totalArticles = filteredArticles.length;
+        updateResultsCount();
+        listView.render(filteredArticles);
+        
+        // Show info message
+        const listEl = document.getElementById('articles-list');
+        if (listEl && filteredArticles.length > 0) {
+            listEl.insertAdjacentHTML('afterbegin', `
+                <div class="filter-info" style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 1rem; margin-bottom: 1rem;">
+                    <strong>Filtered by entity:</strong> ${escapeHtml(data.entity.name)} (${data.entity.type}) - ${filteredArticles.length} articles
+                    <button onclick="window.clearEntityFilter()" style="float: right; padding: 0.25rem 0.75rem; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer;">Clear Filter</button>
+                </div>
+            `);
+        }
+    } catch (error) {
+        console.error('Error loading entity articles:', error);
+    }
+}
+
+/**
+ * Clear storyline filter
+ */
+function clearStorylineFilter() {
+    const searchQuery = document.getElementById('search-query');
+    if (searchQuery) {
+        searchQuery.value = '';
+        searchQuery.disabled = false;
+    }
+    clearFilters();
+}
+
+/**
+ * Clear entity filter
+ */
+function clearEntityFilter() {
+    const searchQuery = document.getElementById('search-query');
+    if (searchQuery) {
+        searchQuery.value = '';
+        searchQuery.disabled = false;
+    }
+    clearFilters();
+}
+
 // Expose functions for views and pagination
 window.appState = appState;
 window.selectArticle = selectArticle;
 window.selectArticleById = selectArticleById;
 window.goToPage = goToPage;
+window.clearStorylineFilter = clearStorylineFilter;
+window.clearEntityFilter = clearEntityFilter;
 
 // Initialize on DOM load
 if (document.readyState === 'loading') {

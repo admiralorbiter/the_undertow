@@ -6,21 +6,37 @@ A local-first web application that ingests news articles, discovers relationship
 
 This project transforms a CSV of news articles into a browsable knowledge map. It uses Flask + SQLite for the backend and vanilla JavaScript (no React) for the frontend. See `tech+design.md` for the complete technical specification.
 
-## Features (Current - P0)
+## Features
 
+**P0 - Foundations:**
 - ✅ CSV ingestion with automatic deduplication
 - ✅ SQLite database with FTS5 full-text search
 - ✅ Article browsing with search and filters
 - ✅ Outlet and date filtering
 - ✅ Responsive web interface
 
-## Coming Soon (P1+)
+**P1 - Core Visual Insights:**
+- ✅ Embeddings (MiniLM-L6-v2) + similarity graph
+- ✅ UMAP Galaxy View (similarity scatter plot)
+- ✅ Clustering (HDBSCAN) and auto-labeling
+- ✅ Timeline analysis
+- ✅ Relationship explainability
 
-- UMAP Galaxy View (similarity scatter plot)
-- Clustering and auto-labeling
+**P2 - Narrative Intelligence:**
+- ✅ Named Entity Recognition (spaCy) - PEOPLE, ORG, GPE extraction
+- ✅ Multi-tier storyline detection (near-duplicates, continuations, related)
+- ✅ Momentum scoring (active vs. dormant vs. concluded)
+- 🔜 Entity role classification
+- 🔜 Causal chain discovery
+
+**P3 - Monitoring & Alerting:**
+- ✅ State-of-the-World Dashboard (active storylines, heatmaps, key actors)
+- ✅ Anomaly Detection (topic surges, story reactivations, new actor emergence)
+- ✅ Alert Management (acknowledge, filter, severity classification)
+
+**Coming Soon:**
 - Entity network visualization
-- Timeline analysis
-- Relationship explainability
+- Causal chain discovery
 
 ## Quick Start
 
@@ -61,7 +77,15 @@ This project transforms a CSV of news articles into a browsable knowledge map. I
    pip install -r requirements.txt
    ```
 
-5. **Ingest your CSV data**
+5. **Download spaCy language model**
+
+   ```bash
+   python -m spacy download en_core_web_sm
+   ```
+
+   Note: This downloads the English language model for Named Entity Recognition.
+
+6. **Ingest your CSV data**
 
    The app will create the database on first run. To ingest your CSV file:
 
@@ -72,16 +96,22 @@ This project transforms a CSV of news articles into a browsable knowledge map. I
 
    Or use the API endpoint after starting the server (see below).
 
-6. **Run the ML pipeline (P1 features)**
+7. **Run the ML pipeline**
 
    After ingesting articles, run the pipeline to generate embeddings, clusters, and visualizations:
 
    ```bash
-   # Run all pipeline steps (embeddings → similarity → clustering → UMAP → labeling)
+   # Run all pipeline steps (embeddings → similarity → clustering → UMAP → labeling → NER → storylines → monitoring)
    python tools/run_pipeline.py
 
    # Run from a specific step
    python tools/run_pipeline.py --step 4
+
+   # Run P2 features (NER + storylines)
+   python tools/run_pipeline.py --step 8
+
+   # Run P3 monitoring (detections + alerts)
+   python tools/run_pipeline.py --step 10
 
    # Force recompute everything
    python tools/run_pipeline.py --force
@@ -90,9 +120,9 @@ This project transforms a CSV of news articles into a browsable knowledge map. I
    python tools/run_pipeline.py --status
    ```
 
-   Note: The first run will download ML models (sentence-transformers, etc.) which may take a few minutes.
+   Note: The first run will download ML models (sentence-transformers, spaCy) which may take a few minutes.
 
-7. **Run the application**
+8. **Run the application**
 
    ```bash
    python app.py
@@ -100,13 +130,15 @@ This project transforms a CSV of news articles into a browsable knowledge map. I
 
    The server will start on `http://127.0.0.1:5000`
 
-8. **Open in your browser**
+9. **Open in your browser**
 
    Navigate to `http://localhost:5000` to see the interface.
    
-   - Switch between **List**, **Galaxy**, and **Timeline** views
+   - Switch between **List**, **Galaxy**, **Timeline**, **Dashboard**, and **Alerts** views
    - Click articles in the Galaxy view to see similarity relationships
    - View the timeline to see article distribution over time
+   - Check the Dashboard for state-of-the-world summary
+   - View Alerts to see anomaly detections (surges, reactivations, new actors)
    - Check the details panel for explain-why information about similar articles
 
 ### Ingest CSV via API
@@ -118,6 +150,222 @@ curl -X POST "http://localhost:5000/api/ingest/csv?path=summarized_output.csv"
 ```
 
 Or use any HTTP client to POST to `/api/ingest/csv?path=<your-file.csv>`
+
+### GET /api/entities
+
+List entities with filters.
+
+**Query Parameters:**
+- `type` - Filter by entity type (PERSON, ORG, GPE, LOC, MISC)
+- `q` - Search entities by name
+- `min_degree` - Minimum number of articles mentioning entity
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "name": "Elon Musk",
+      "type": "PERSON",
+      "degree": 45
+    }
+  ]
+}
+```
+
+### GET /api/entities/:id/timeline
+
+Get timeline of articles mentioning an entity.
+
+**Response:**
+```json
+{
+  "entity": {"id": 1, "name": "Elon Musk", "type": "PERSON"},
+  "articles": [
+    {"id": 123, "title": "...", "date": "2025-02-10", "role_type": "protagonist"}
+  ]
+}
+```
+
+### GET /api/entities/:id/relationships
+
+Get entities frequently co-mentioned with this entity.
+
+**Response:**
+```json
+{
+  "related_entities": [
+    {"entity_id": 2, "name": "Tesla", "co_mention_count": 12}
+  ]
+}
+```
+
+### GET /api/storylines
+
+List storylines with filters.
+
+**Query Parameters:**
+- `status` - Filter by status (active, dormant, concluded)
+- `min_momentum` - Minimum momentum score
+- `from_date`, `to_date` - Date range
+
+**Response:**
+```json
+{
+  "storylines": [
+    {
+      "id": 1,
+      "label": "Trump spending freeze court challenges",
+      "status": "active",
+      "momentum_score": 1.5,
+      "article_count": 8,
+      "first_date": "2025-02-10",
+      "last_date": "2025-02-15"
+    }
+  ]
+}
+```
+
+### GET /api/storyline/:id/articles
+
+Get articles in a storyline, ordered chronologically.
+
+**Response:**
+```json
+{
+  "storyline": {
+    "id": 1,
+    "label": "...",
+    "status": "active",
+    "momentum_score": 1.5
+  },
+  "articles": [
+    {
+      "id": 123,
+      "title": "...",
+      "date": "2025-02-10",
+      "tier": "tier1",
+      "sequence_order": 0
+    }
+  ]
+}
+```
+
+### GET /api/dashboard/summary
+
+Get aggregated dashboard data showing system state.
+
+**Query Parameters:**
+- `days_back` - Number of days to include (default: 30, range: 7-365)
+
+**Response:**
+```json
+{
+  "stats": {
+    "total_articles": 581,
+    "active_storylines_count": 5,
+    "dormant_storylines_count": 56,
+    "total_entities": 1374,
+    "new_articles_7d": 38
+  },
+  "active_storylines": [
+    {
+      "id": 1,
+      "label": "...",
+      "status": "active",
+      "momentum_score": 3.0,
+      "article_count": 3,
+      "first_date": "2025-10-27",
+      "last_date": "2025-10-28"
+    }
+  ],
+  "temporal_heatmap": [
+    {"date": "2025-10-27", "count": 9}
+  ],
+  "key_actors": [
+    {
+      "entity_id": 1,
+      "name": "Trump",
+      "type": "PERSON",
+      "mentions_7d": 19
+    }
+  ],
+  "cluster_evolution": [
+    {
+      "date": "2025-10-31",
+      "cluster_sizes": {"0.0": 1, "2.0": 2}
+    }
+  ],
+  "recent_alerts": []
+}
+```
+
+### GET /api/alerts
+
+List alerts with filters.
+
+**Query Parameters:**
+- `limit` - Max results (default: 50, max: 200)
+- `alert_type` - Filter by type (topic_surge, story_reactivation, new_actor, divergence)
+- `severity` - Filter by severity (low, medium, high)
+- `since` - ISO timestamp to filter from
+
+**Response:**
+```json
+{
+  "alerts": [
+    {
+      "id": 1,
+      "alert_type": "topic_surge",
+      "entity_json": "{\"cluster_id\": 3, \"current_count\": 15, \"previous_count\": 8}",
+      "triggered_at": "2025-10-28T12:00:00",
+      "description": "Cluster 3: 15 articles in last 7 days vs 8 in previous week (1.9x growth)",
+      "severity": "medium",
+      "acknowledged": false
+    }
+  ]
+}
+```
+
+### POST /api/alerts/:id/acknowledge
+
+Mark alert as acknowledged.
+
+**Response:**
+```json
+{
+  "success": true,
+  "acknowledged": 1
+}
+```
+
+### POST /api/monitoring/run
+
+Trigger detection run manually.
+
+**Response:**
+```json
+{
+  "alerts_created": 5,
+  "surges": 2,
+  "reactivations": 1,
+  "new_actors": 2
+}
+```
+
+### GET /api/monitoring/stats
+
+Get monitoring statistics.
+
+**Response:**
+```json
+{
+  "total_alerts": 42,
+  "unacknowledged_alerts": 15,
+  "recent_alerts_24h": 3
+}
+```
 
 ## Project Structure
 

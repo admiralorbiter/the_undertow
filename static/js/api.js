@@ -92,6 +92,71 @@ export const api = {
             throw new Error(`API error: ${response.statusText}`);
         }
         return await response.json();
+    },
+    
+    /**
+     * Get dashboard summary
+     */
+    async getDashboardSummary(daysBack = 30) {
+        const response = await fetch(`${API_BASE}/dashboard/summary?days_back=${daysBack}`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.statusText}`);
+        }
+        return await response.json();
+    },
+    
+    /**
+     * Get alerts with optional filters
+     */
+    async getAlerts(filters = {}) {
+        const queryString = new URLSearchParams();
+        
+        if (filters.alert_type) queryString.append('alert_type', filters.alert_type);
+        if (filters.severity) queryString.append('severity', filters.severity);
+        if (filters.since) queryString.append('since', filters.since);
+        if (filters.limit) queryString.append('limit', filters.limit);
+        
+        const url = `${API_BASE}/alerts${queryString.toString() ? '?' + queryString.toString() : ''}`;
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    },
+    
+    /**
+     * Acknowledge an alert
+     */
+    async acknowledgeAlert(alertId) {
+        const response = await fetch(`${API_BASE}/alerts/${alertId}/acknowledge`, { method: 'POST' });
+        if (!response.ok) {
+            throw new Error(`API error: ${response.statusText}`);
+        }
+        return await response.json();
+    },
+    
+    /**
+     * Run monitoring detections
+     */
+    async runMonitoring() {
+        const response = await fetch(`${API_BASE}/monitoring/run`, { method: 'POST' });
+        if (!response.ok) {
+            throw new Error(`API error: ${response.statusText}`);
+        }
+        return await response.json();
+    },
+    
+    /**
+     * Get monitoring statistics
+     */
+    async getMonitoringStats() {
+        const response = await fetch(`${API_BASE}/monitoring/stats`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.statusText}`);
+        }
+        return await response.json();
     }
 };
 

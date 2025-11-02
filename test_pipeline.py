@@ -81,6 +81,44 @@ elif r.status_code == 404:
 else:
     print(f"   [ERROR] Status code: {r.status_code}")
 
+# Test Dashboard API
+print("\n5. Testing Dashboard API...")
+r = client.get('/api/dashboard/summary?days_back=30')
+if r.status_code == 200:
+    data = r.get_json()
+    stats = data.get('stats', {})
+    print(f"   [OK] Total articles: {stats.get('total_articles', 0)}")
+    print(f"   [OK] Active storylines: {stats.get('active_storylines_count', 0)}")
+    print(f"   [OK] Dormant storylines: {stats.get('dormant_storylines_count', 0)}")
+    print(f"   [OK] Key actors: {len(data.get('key_actors', []))}")
+    print(f"   [OK] Heatmap days: {len(data.get('temporal_heatmap', []))}")
+else:
+    print(f"   [ERROR] Status code: {r.status_code}")
+
+# Test Monitoring API
+print("\n6. Testing Monitoring API...")
+# Test get alerts
+r = client.get('/api/alerts?limit=10')
+if r.status_code == 200:
+    data = r.get_json()
+    alerts = data.get('alerts', [])
+    print(f"   [OK] {len(alerts)} alerts returned")
+    if alerts:
+        sample = alerts[0]
+        print(f"   [OK] Sample alert: {sample.get('alert_type')} - {sample.get('severity')}")
+        print(f"      Description: {sample.get('description', '')[:60]}...")
+else:
+    print(f"   [ERROR] Status code: {r.status_code}")
+
+# Test monitoring stats
+r = client.get('/api/monitoring/stats')
+if r.status_code == 200:
+    data = r.get_json()
+    print(f"   [OK] Total alerts: {data.get('total_alerts', 0)}")
+    print(f"   [OK] Unacknowledged: {data.get('unacknowledged_alerts', 0)}")
+else:
+    print(f"   [ERROR] Status code: {r.status_code}")
+
 print("\n" + "=" * 60)
 print("[SUCCESS] All API endpoints responding correctly!")
 print("=" * 60)
@@ -89,6 +127,8 @@ print("1. Start the app: python app.py")
 print("2. Open browser: http://localhost:5000")
 print("3. Test Galaxy view: Click 'Galaxy' tab")
 print("4. Test Timeline view: Click 'Timeline' tab")
-print("5. Click articles to see explain-why panel")
+print("5. Test Dashboard: Click 'Dashboard' tab")
+print("6. Test Alerts: Click 'Alerts' tab")
+print("7. Click articles to see explain-why panel")
 print("\nSee TESTING.md for detailed testing guide.")
 
