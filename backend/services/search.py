@@ -5,7 +5,7 @@ from backend.db import get_db
 from urllib.parse import quote
 
 
-def search_articles(query, date_from='', date_to='', outlet='', limit=100, offset=0, count_only=False):
+def search_articles(query, date_from='', date_to='', outlet='', cluster_id=None, limit=100, offset=0, count_only=False):
     """
     Search articles using FTS5.
     
@@ -14,6 +14,7 @@ def search_articles(query, date_from='', date_to='', outlet='', limit=100, offse
         date_from: Start date filter (YYYY-MM-DD)
         date_to: End date filter (YYYY-MM-DD)
         outlet: Outlet filter
+        cluster_id: Cluster ID filter (int or None)
         limit: Maximum results
         offset: Pagination offset
         count_only: If True, return only the count
@@ -54,6 +55,10 @@ def search_articles(query, date_from='', date_to='', outlet='', limit=100, offse
     if outlet:
         conditions.append(f"{col_prefix}outlet = ?")
         params.append(outlet)
+    
+    if cluster_id is not None:
+        conditions.append(f"{col_prefix}cluster_id = ?")
+        params.append(cluster_id)
     
     where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
     

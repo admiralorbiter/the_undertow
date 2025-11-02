@@ -2,7 +2,7 @@
 UMAP API endpoints.
 Provides 2D UMAP projection coordinates for visualization.
 """
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 from backend.db import get_db
 from backend.config import Config
 
@@ -38,22 +38,36 @@ def get_umap():
     cursor = conn.cursor()
     
     try:
-        # Get all articles with UMAP coordinates
-        cursor.execute("""
-            SELECT id, umap_x, umap_y, cluster_id
-            FROM articles
-            WHERE umap_x IS NOT NULL AND umap_y IS NOT NULL
-            ORDER BY id
-        """)
+        # Get all articles with UMAP coordinates (include title and summary for tooltips)
+        include_details = request.args.get('include_details', 'false').lower() == 'true'
+        
+        if include_details:
+            cursor.execute("""
+                SELECT id, umap_x, umap_y, cluster_id, title, summary
+                FROM articles
+                WHERE umap_x IS NOT NULL AND umap_y IS NOT NULL
+                ORDER BY id
+            """)
+        else:
+            cursor.execute("""
+                SELECT id, umap_x, umap_y, cluster_id
+                FROM articles
+                WHERE umap_x IS NOT NULL AND umap_y IS NOT NULL
+                ORDER BY id
+            """)
         
         points = []
         for row in cursor.fetchall():
-            points.append({
+            point = {
                 'id': row['id'],
                 'x': float(row['umap_x']) if row['umap_x'] is not None else None,
                 'y': float(row['umap_y']) if row['umap_y'] is not None else None,
                 'cluster_id': row['cluster_id']
-            })
+            }
+            if include_details:
+                point['title'] = row['title']
+                point['summary'] = row['summary']
+            points.append(point)
         
         # Check if we have clusters
         cursor.execute("SELECT COUNT(*) FROM clusters")

@@ -15,6 +15,9 @@ export const api = {
         if (params.from) queryString.append('from', params.from);
         if (params.to) queryString.append('to', params.to);
         if (params.outlet) queryString.append('outlet', params.outlet);
+        if (params.cluster_id !== null && params.cluster_id !== undefined) {
+            queryString.append('cluster_id', params.cluster_id);
+        }
         if (params.limit) queryString.append('limit', params.limit);
         if (params.offset) queryString.append('offset', params.offset);
         

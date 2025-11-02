@@ -14,12 +14,17 @@ const appState = {
         q: '',
         from: '',
         to: '',
-        outlet: ''
+        outlet: '',
+        cluster_id: null
     },
     currentPage: 0,
     pageSize: 20,
     selectedArticle: null,
-    totalArticles: 0
+    totalArticles: 0,
+    timelineSelection: {
+        dateBin: null,
+        clusterId: null
+    }
 };
 
 // Initialize views
@@ -82,6 +87,10 @@ function setupEventListeners() {
     
     // Load outlets for filter dropdown
     loadOutlets();
+    
+    // Listen for timeline filter events
+    document.addEventListener('timeline-filter', handleTimelineFilter);
+    document.addEventListener('timeline-brush', handleTimelineBrush);
 }
 
 /**
@@ -122,10 +131,11 @@ document.addEventListener('article-selected', (e) => {
 
 // Handle window resize for charts
 window.addEventListener('resize', () => {
-    if (appState.currentView === 'galaxy' && galaxyView) {
+    // Resize charts when window resizes
+    if (galaxyView && galaxyView.chart) {
         galaxyView.resize();
     }
-    if (appState.currentView === 'timeline' && timelineView) {
+    if (timelineView && timelineView.chart) {
         timelineView.resize();
     }
 });
@@ -138,7 +148,8 @@ async function applyFilters() {
         q: document.getElementById('search-query').value.trim(),
         from: document.getElementById('date-from').value,
         to: document.getElementById('date-to').value,
-        outlet: document.getElementById('outlet-filter').value
+        outlet: document.getElementById('outlet-filter').value,
+        cluster_id: appState.filters.cluster_id // Preserve cluster_id from timeline
     };
     
     appState.currentPage = 0;
@@ -158,10 +169,103 @@ function clearFilters() {
         q: '',
         from: '',
         to: '',
-        outlet: ''
+        outlet: '',
+        cluster_id: null
     };
     
+    appState.timelineSelection = {
+        dateBin: null,
+        clusterId: null
+    };
+    
+    // Clear timeline visual selection
+    if (timelineView && timelineView.clearVisualSelection) {
+        timelineView.clearVisualSelection();
+    }
+    
     loadArticles();
+}
+
+/**
+ * Handle timeline filter event (click on bin)
+ */
+function handleTimelineFilter(event) {
+    const { dateRange, clusterId, count } = event.detail;
+    
+    // Update appState filters
+    appState.filters.from = dateRange.from;
+    appState.filters.to = dateRange.to;
+    appState.filters.cluster_id = clusterId === 'null' ? null : clusterId;
+    
+    // Update timeline selection
+    appState.timelineSelection = {
+        dateBin: event.detail.binIndex,
+        clusterId: clusterId
+    };
+    
+    // Update filter panel UI
+    updateFilterPanelUI();
+    
+    // Switch to list view and load articles
+    switchView('list');
+    appState.currentPage = 0;
+    loadArticles();
+}
+
+/**
+ * Handle timeline brush event (drag to select range)
+ */
+function handleTimelineBrush(event) {
+    const { dateRange } = event.detail;
+    
+    // Update appState filters
+    appState.filters.from = dateRange.from;
+    appState.filters.to = dateRange.to;
+    // Don't set cluster_id for brush (selects all clusters in range)
+    appState.filters.cluster_id = null;
+    
+    // Clear timeline bin selection
+    appState.timelineSelection = {
+        dateBin: null,
+        clusterId: null
+    };
+    
+    // Update filter panel UI
+    updateFilterPanelUI();
+    
+    // Switch to list view and load articles
+    switchView('list');
+    appState.currentPage = 0;
+    loadArticles();
+}
+
+/**
+ * Update filter panel UI to reflect current filters
+ */
+function updateFilterPanelUI() {
+    const fromInput = document.getElementById('date-from');
+    const toInput = document.getElementById('date-to');
+    
+    if (fromInput && appState.filters.from) {
+        // Convert YYYY-MM-DD to MM/DD/YYYY for date input
+        const fromDate = appState.filters.from;
+        if (fromDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            const parts = fromDate.split('-');
+            fromInput.value = `${parts[1]}/${parts[2]}/${parts[0]}`;
+        } else {
+            fromInput.value = appState.filters.from;
+        }
+    }
+    
+    if (toInput && appState.filters.to) {
+        const toDate = appState.filters.to;
+        if (toDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            const parts = toDate.split('-');
+            toInput.value = `${parts[1]}/${parts[2]}/${parts[0]}`;
+        } else {
+            toInput.value = appState.filters.to;
+        }
+    }
 }
 
 /**
@@ -324,46 +428,58 @@ async function showArticleDetails(article) {
         
         if (similarData.items && similarData.items.length > 0) {
             html += `
-                <div class="similar-articles" style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid #e2e8f0;">
-                    <h4 style="margin-bottom: 1rem;">Similar Articles</h4>
+                <div class="similar-articles">
+                    <h4>Similar Articles</h4>
             `;
             
             similarData.items.forEach(item => {
+                const similarity = item.cosine !== null && item.cosine !== undefined 
+                    ? item.cosine : 0;
+                const similarityPercent = (similarity * 100).toFixed(1);
+                
+                // Determine similarity badge color
+                let badgeClass = 'similarity-badge-low';
+                if (similarity >= 0.8) badgeClass = 'similarity-badge-high';
+                else if (similarity >= 0.6) badgeClass = 'similarity-badge-medium';
+                
                 html += `
-                    <div class="similar-item" style="margin-bottom: 1.5rem; padding: 1rem; background: #f8fafc; border-radius: 0.5rem;">
-                        <h5 style="margin: 0 0 0.5rem 0; font-size: 1rem;">
-                            <a href="#" onclick="window.selectArticleById(${item.id}); return false;" style="color: var(--primary-color); text-decoration: none;">
-                                ${escapeHtml(item.title)}
-                            </a>
-                        </h5>
-                        <div class="why-related" style="font-size: 0.875rem; color: #64748b;">
+                    <div class="similar-item">
+                        <div class="similar-item-header">
+                            <h5>
+                                <a href="#" onclick="window.selectArticleById(${item.id}); return false;" class="similar-item-link">
+                                    ${escapeHtml(item.title)}
+                                </a>
+                            </h5>
+                            <span class="similarity-badge ${badgeClass}" title="Cosine similarity">
+                                ${similarityPercent}%
+                            </span>
+                        </div>
+                        <div class="why-related">
                 `;
                 
                 // Show explain-why information
-                if (item.cosine !== null && item.cosine !== undefined) {
-                    html += `<div style="margin-bottom: 0.5rem;">
-                        <strong>Similarity:</strong> ${(item.cosine * 100).toFixed(1)}%
-                    </div>`;
-                }
-                
                 if (item.why) {
                     if (item.why.shared_terms && item.why.shared_terms.length > 0) {
-                        html += `<div style="margin-bottom: 0.5rem;">
-                            <strong>Shared terms:</strong> ${escapeHtml(item.why.shared_terms.slice(0, 5).join(', '))}
+                        const terms = item.why.shared_terms.slice(0, 8);
+                        html += `<div class="why-section">
+                            <span class="why-label">Shared terms:</span>
+                            <div class="shared-terms">
+                                ${terms.map(term => `<span class="term-chip">${escapeHtml(term)}</span>`).join('')}
+                            </div>
                         </div>`;
                     }
                     
                     if (item.why.date_proximity_days !== null && item.why.date_proximity_days !== undefined) {
-                        html += `<div style="margin-bottom: 0.5rem;">
-                            <strong>Date proximity:</strong> ${item.why.date_proximity_days} day${item.why.date_proximity_days !== 1 ? 's' : ''}
+                        html += `<div class="why-section">
+                            <span class="why-icon">📅</span>
+                            <span class="why-text">${item.why.date_proximity_days} day${item.why.date_proximity_days !== 1 ? 's' : ''} apart</span>
                         </div>`;
                     }
                     
                     if (item.why.same_outlet) {
-                        html += `<div style="margin-bottom: 0.5rem;">
-                            <span style="background: #dbeafe; color: #1e40af; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem;">
-                                Same outlet
-                            </span>
+                        html += `<div class="why-section">
+                            <span class="why-icon">📰</span>
+                            <span class="why-badge">Same outlet</span>
                         </div>`;
                     }
                 }

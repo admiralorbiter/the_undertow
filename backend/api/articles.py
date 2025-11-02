@@ -37,6 +37,7 @@ def get_articles():
     date_from = request.args.get('from', '').strip()
     date_to = request.args.get('to', '').strip()
     outlet = request.args.get('outlet', '').strip()
+    cluster_id = request.args.get('cluster_id', type=int)
     limit = int(request.args.get('limit', 100))
     offset = int(request.args.get('offset', 0))
     
@@ -50,8 +51,8 @@ def get_articles():
     
     # Use FTS5 if query provided, otherwise regular SELECT
     if query:
-        results = search_articles(query, date_from, date_to, outlet, limit, offset)
-        total = search_articles(query, date_from, date_to, outlet, limit=10000, offset=0, count_only=True)
+        results = search_articles(query, date_from, date_to, outlet, cluster_id, limit, offset)
+        total = search_articles(query, date_from, date_to, outlet, cluster_id, limit=10000, offset=0, count_only=True)
     else:
         # Build WHERE clause
         conditions = []
@@ -68,6 +69,10 @@ def get_articles():
         if outlet:
             conditions.append("outlet = ?")
             params.append(outlet)
+        
+        if cluster_id is not None:
+            conditions.append("cluster_id = ?")
+            params.append(cluster_id)
         
         where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
         
