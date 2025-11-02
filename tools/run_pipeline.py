@@ -86,7 +86,7 @@ Examples:
     print(f"\n=== Running Pipeline (starting from step {args.step}) ===\n")
     
     if args.force:
-        print("⚠️  Force recompute enabled - will recompute even if already completed\n")
+        print("[FORCE] Force recompute enabled - will recompute even if already completed\n")
     
     try:
         results = runner.run_full_pipeline(
@@ -101,7 +101,7 @@ Examples:
             step_num = step_key.replace('step_', '')
             
             if status == 'completed':
-                print(f"✅ Step {step_num}: Completed")
+                print(f"[OK] Step {step_num}: Completed")
                 
                 # Show step-specific stats
                 if 'processed' in result:
@@ -118,13 +118,13 @@ Examples:
                     print(f"   Clusters labeled: {result['clusters_labeled']}")
                     
             elif status == 'skipped':
-                print(f"⏭️  Step {step_num}: Skipped (already completed)")
+                print(f"[SKIP] Step {step_num}: Skipped (already completed)")
             elif status == 'error':
-                print(f"❌ Step {step_num}: Error - {result.get('error', 'Unknown error')}")
+                print(f"[ERROR] Step {step_num}: Error - {result.get('error', 'Unknown error')}")
             elif status == 'not_implemented':
-                print(f"🚧 Step {step_num}: Not implemented (P2 feature)")
+                print(f"[P2] Step {step_num}: Not implemented (P2 feature)")
             else:
-                print(f"⚠️  Step {step_num}: Status: {status}")
+                print(f"[WARNING] Step {step_num}: Status: {status}")
             
             print()
         
@@ -137,14 +137,14 @@ Examples:
         print(f"Articles with UMAP: {final_status.get('articles_with_umap', 0)}")
         print(f"Clusters labeled: {final_status.get('clusters_labeled', 0)}")
         
-        print("\n✅ Pipeline execution complete!\n")
+        print("\n[SUCCESS] Pipeline execution complete!\n")
         
     except KeyboardInterrupt:
-        print("\n\n⚠️  Pipeline interrupted by user\n")
+        print("\n\n[INTERRUPTED] Pipeline interrupted by user\n")
         sys.exit(1)
     except Exception as e:
         logger.error(f"Pipeline failed: {e}", exc_info=True)
-        print(f"\n❌ Pipeline failed: {e}\n")
+        print(f"\n[ERROR] Pipeline failed: {e}\n")
         sys.exit(1)
 
 
