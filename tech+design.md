@@ -1,6 +1,6 @@
-# Project: News Relationship Explorer
+# Project: News Relationship Explorer → Narrative Intelligence System
 
-A small, local-first web app that ingests news articles (Title, Date, URL, Summary), discovers relationships (similarity, entities, topics, timelines), and surfaces them through interactive visualizations — without React.
+A local-first web app that ingests news articles (Title, Date, URL, Summary), discovers relationships and **tracks narrative evolution** over time. Transforms collections of articles into a navigable intelligence system for understanding how stories develop, connect, and impact real-world events — without React.
 
 ---
 
@@ -8,8 +8,10 @@ A small, local-first web app that ingests news articles (Title, Date, URL, Summa
 
 **Goals**
 - Transform a CSV of articles into a browsable knowledge map.
-- Show relationships: similarity clusters, shared entities, topic trends over time.
-- Provide explainability: *why* two things are linked (shared entities/terms, cosine similarity).
+- **Track narrative evolution**: how individual stories develop, branch, and connect over time.
+- **Discover causal chains**: identify Event A → Event B → Event C sequences with evidence.
+- **Monitor the "state of the world"**: detect topic surges, dormant story reactivation, emerging patterns.
+- Provide explainability: *why* two things are linked (shared entities/terms, cosine similarity, temporal proximity).
 - Keep the stack lightweight: Flask + SQLite backend, non‑React JS frontend.
 
 **Non‑Goals**
@@ -34,22 +36,28 @@ A small, local-first web app that ingests news articles (Title, Date, URL, Summa
 - Time density chart (weekly/monthly counts; per cluster filter).
 - Explain-why panel (shared entities/terms, cosine score).
 
-**P2 – Relationship Deep‑Dive**
-- NER (spaCy) for People/Orgs/Places.
-- Entity co‑mention network (toggle types, filter by date/cluster).
-- Storyline threading: near‑duplicate grouping within ±3 days.
+**P2 – Narrative Intelligence (Current Phase)**
+- NER (spaCy) for People/Orgs/Places with entity timeline tracking.
+- **Story Arc Detection**: Multi-tier storyline threading (near-duplicates, continuations, related developments).
+- **Causal Chain Discovery**: Identify Event A → B → C sequences using temporal ordering, similarity, and entity overlap.
+- Entity role tracking (protagonist/antagonist/subject/adjudicator).
 
-**P3 – Advanced Views & UX**
-- Sankey/Alluvial: topic flows over time.
-- Outlet × Topic matrix (Marimekko‑style tile grid).
-- Saved views + sharable filter URLs.
+**P3 – Monitoring & Alerting**
+- **State-of-the-World Dashboard**: Active storylines, surge alerts, temporal heatmap, key actors.
+- Anomaly/surge detection (topic surges, dormant story reactivation, new actor emergence).
+- Cross-domain connection discovery (bridge articles, semantic paths between clusters).
 
-**P4 – Stretch (see §13)**
-- Geo map (MapLibre/Leaflet) from place NER + geocoding.
-- Stance/sentiment classifiers; bias slice.
-- Alerting on surges; newsletter export.
+**P4 – Prediction & Forecasting (Stretch)**
+- Narrative continuation prediction (likely next developments based on historical patterns).
+- Event impact estimation (potential story reach/scaling).
+- Temporal forecasting (volume and topic trends in coming days/weeks).
+- Sentiment tracking within storylines over time.
 
 Each phase should be shippable; phases are additive.
+
+**What Changed from Original Plan:**
+- Deprioritized: entity co-mention networks (replaced by timeline-based tracking), outlet matrices, geo maps, saved views.
+- New focus: narrative evolution, causal chains, real-time monitoring, predictive insights.
 
 ---
 
@@ -65,6 +73,9 @@ Each phase should be shippable; phases are additive.
 - `cluster_id` (from HDBSCAN/k‑means)
 - `entities` (spaCy NER: PERSON, ORG, GPE/LOC)
 - `similarity_edges` (pairs over threshold; store evidence)
+- `storyline_id` (which narrative thread this article belongs to)
+- `event_type` (Executive Action, Court Ruling, Legislative, Protest, Statement, etc.)
+- `sentiment` (positive/negative/neutral - optional for P4)
 
 **Notes**
 - Date normalization to UTC midnight; store ISO‑8601.
@@ -131,12 +142,55 @@ Each phase should be shippable; phases are additive.
 - `cosine` REAL
 - `shared_entities` TEXT (JSON array of entity_ids)
 - `shared_terms` TEXT (JSON of top n‑grams)
+- `tier` TEXT CHECK(tier IN ('near_duplicate','continuation','related'))
 - PK(src_id, dst_id)
+
+**storylines**
+- `id` INTEGER PK
+- `label` TEXT (auto-generated storyline name)
+- `status` TEXT CHECK(status IN ('active','dormant','concluded'))
+- `momentum_score` REAL (article frequency weighted by recency)
+- `first_date` TEXT (ISO date)
+- `last_date` TEXT (ISO date)
+
+**storyline_articles**
+- `storyline_id` INTEGER FK → storylines.id
+- `article_id` INTEGER FK → articles.id
+- `tier` TEXT CHECK(tier IN ('tier1','tier2','tier3'))
+- `sequence_order` INTEGER (chronological order within storyline)
+- PK(storyline_id, article_id)
+
+**causal_chains**
+- `id` INTEGER PK
+- `articles_json` TEXT (JSON array of article_ids in order)
+- `chain_type` TEXT (Policy Chain, Actor Chain, Institutional Chain)
+- `strength_score` REAL (aggregate confidence)
+- `start_date` TEXT (ISO date)
+- `end_date` TEXT (ISO date)
+
+**entity_roles**
+- `entity_id` INTEGER FK → entities.id
+- `article_id` INTEGER FK → articles.id
+- `role_type` TEXT CHECK(role_type IN ('protagonist','antagonist','subject','adjudicator','neutral'))
+- `confidence` REAL
+- PK(entity_id, article_id)
+
+**alerts**
+- `id` INTEGER PK
+- `alert_type` TEXT CHECK(alert_type IN ('topic_surge','story_reactivation','new_actor','divergence'))
+- `entity_json` TEXT (JSON object describing alert context)
+- `triggered_at` TEXT (ISO timestamp)
+- `description` TEXT
+- `severity` TEXT CHECK(severity IN ('low','medium','high'))
 
 **indexes**
 - `CREATE INDEX idx_articles_date ON articles(date);`
 - `CREATE INDEX idx_articles_outlet ON articles(outlet);`
+- `CREATE INDEX idx_articles_storyline ON articles(storyline_id);`
 - `CREATE INDEX idx_entities_name ON entities(name);`
+- `CREATE INDEX idx_storyline_articles_order ON storyline_articles(storyline_id, sequence_order);`
+- `CREATE INDEX idx_causal_chains_dates ON causal_chains(start_date, end_date);`
+- `CREATE INDEX idx_alerts_triggered ON alerts(triggered_at DESC);`
 
 **Vector search**
 - FAISS index saved to `data/faiss.index` + table `vector_meta(version, dim, count)`.
@@ -176,7 +230,49 @@ Each phase should be shippable; phases are additive.
 - Returns job id and summary.
 
 **GET /api/storylines**
-- Returns near‑duplicate groups: `{ threads:[{id, article_ids, head_id, span_days}] }`
+- Query: `status`, `min_momentum`, `from_date`, `to_date`
+- Returns storyline list: `{ storylines:[{id, label, status, momentum_score, article_count, first_date, last_date}] }`
+
+**GET /api/storyline/:id/articles**
+- Returns articles in a storyline: `{ storyline: {...}, articles:[{id, title, date, tier, sequence_order}] }`
+
+**GET /api/storyline/:id/evolution**
+- Returns evolution timeline: `{ nodes:[{article_id, date, tier}], edges:[{from, to, type}] }`
+
+**GET /api/chains**
+- Query: `chain_type`, `min_strength`
+- Returns causal chains: `{ chains:[{id, articles, chain_type, strength_score, start_date, end_date}] }`
+
+**GET /api/article/:id/upstream**
+- Returns causal predecessors: `{ articles:[{id, title, date, relationship_type}] }`
+
+**GET /api/article/:id/downstream**
+- Returns causal successors: `{ articles:[{id, title, date, relationship_type}] }`
+
+**GET /api/entities/:id/timeline**
+- Returns entity mentions over time: `{ entity: {...}, articles:[{id, title, date, role_type}] }`
+
+**GET /api/entities/:id/relationships**
+- Returns entity co-mention relationships: `{ related_entities:[{entity_id, name, co_mention_count, relationship_type}] }`
+
+**GET /api/alerts**
+- Query: `severity`, `alert_type`, `since` (ISO timestamp)
+- Returns recent alerts: `{ alerts:[{id, alert_type, description, severity, triggered_at, entity_json}] }`
+
+**GET /api/monitoring/stats**
+- Returns monitoring statistics: `{ active_storylines: int, dormant_storylines: int, recent_alerts: int, new_articles_7d: int, topics_surging: [...], top_entities: [...] }`
+
+**GET /api/dashboard/summary**
+- Returns state-of-the-world summary: `{ active_storylines:[...], recent_alerts:[...], temporal_heatmap:[...], key_actors:[...], cluster_evolution:[...] }`
+
+**GET /api/clusters/bridges**
+- Returns articles bridging multiple clusters: `{ bridges:[{article_id, clusters:[...], bridge_strength}] }`
+
+**GET /api/clusters/cooccurrence**
+- Returns cluster co-occurrence matrix: `{ matrix:[[cluster_a, cluster_b, count], ...] }`
+
+**GET /api/path/:cluster_a/:cluster_b**
+- Returns semantic path between clusters: `{ path:[{article_id, title, date}], intermediate_clusters:[...] }`
 
 **Errors**
 - Consistent envelope: `{ ok:false, error:{code,message,details} }` with 4xx/5xx.
@@ -206,7 +302,10 @@ Each phase should be shippable; phases are additive.
 **Key Views**
 - **Galaxy View**: UMAP scatter (ECharts) with zoom/brush; color by cluster; hover = title+summary; click selects article → details panel.
 - **Timeline**: stacked area by cluster; brushing updates other views.
-- **Entity Graph**: Cytoscape force layout; filter by type/date; click node shows linked articles; edge hover shows co‑mention counts.
+- **Storylines View**: River/Sankey-style narrative flow (timeline X-axis, storylines as flowing threads); click to expand thread; color intensity = activity.
+- **Causal Chains View**: Node-link graph showing Event A → B → C sequences; temporal flow; highlight chain types.
+- **Dashboard View**: State-of-the-world summary - active storylines, alerts, temporal heatmap, key actors, cluster evolution.
+- **Entity Timeline**: Horizontal timeline for selected entity showing all mentions, role changes, activity peaks.
 
 **Interactions**
 - Cross‑filtering: brushing timeline filters galaxy and graph.
@@ -244,12 +343,28 @@ Each phase should be shippable; phases are additive.
 
 **8. NER**
 - spaCy `en_core_web_sm` (lightweight) on title+summary. Extract PERSON/ORG/GPE/LOC; store counts per article.
+- Entity role classification: protagonist/antagonist/subject/adjudicator based on verb proximity and sentence structure.
 
-**9. Storylines (near‑dup)**
-- Union‑Find on edges with `cosine ≥ 0.85` AND `|date_i - date_j| ≤ 3 days`.
+**9. Storylines (Multi‑Tier)**
+- Tier 1 (Near-duplicates): Union‑Find on edges with `cosine ≥ 0.85` AND `|date_i - date_j| ≤ 3 days`.
+- Tier 2 (Continuations): `0.65 ≤ cosine < 0.85` AND `|date_i - date_j| ≤ 7 days`.
+- Tier 3 (Related): `0.50 ≤ cosine < 0.65` with shared key entities.
+- Momentum scoring: article frequency weighted by recency.
+
+**10. Causal Chain Detection**
+- Identify event sequences: temporal ordering + semantic continuity (0.45 ≤ cosine ≤ 0.70) + shared entities + causal language patterns.
+- Chain types: Policy Chain, Actor Chain, Institutional Chain.
+- Strength scoring: temporal proximity + similarity + entity overlap + causal language presence.
+
+**11. Monitoring & Anomaly Detection**
+- Topic surge detection: cluster growth rate monitoring, alert on >X% week-over-week.
+- Dormant story reactivation: track storylines quiet >14 days, alert on new articles.
+- New actor emergence: entities frequent in recent window but absent historically.
+- Narrative divergence: detect contradictory patterns in similar stories.
 
 **Batching**
-- Run steps 3–9 as an idempotent pipeline. On ingest, enqueue job; otherwise allow manual rebuild.
+- Run steps 3–11 as an idempotent pipeline. On ingest, enqueue job; otherwise allow manual rebuild.
+- Monitoring (step 11) can run as background job after new articles ingested or on-demand.
 
 ---
 
@@ -257,10 +372,12 @@ Each phase should be shippable; phases are additive.
 
 For any link (article→article or node→node), show:
 - **Cosine similarity** (0–1)
-- **Shared entities** (with types)
+- **Shared entities** (with types and roles)
 - **Shared top n‑grams** (TF‑IDF intersection)
 - **Date proximity** (days apart)
 - **Outlet overlap** (same/different)
+- **Relationship tier** (near-duplicate/continuation/related)
+- **Causal evidence** (if applicable: detected causal language, chain membership)
 
 Keep a small JSON blob (`why`) on edges for fast UI.
 
@@ -305,24 +422,43 @@ Keep a small JSON blob (`why`) on edges for fast UI.
 
 ## 13) Stretch Goals (Extensions)
 
-- **Geo view**: geocode GPE entities (Nominatim) → MapLibre map; cluster pins.
-- **Stance/Bias**: light classifier per topic; outlet comparison.
+- **Prediction engine**: narrative continuation prediction, event impact estimation, temporal volume forecasting.
+- **Sentiment tracking**: sentiment shifts within storylines over time.
+- **Outlet classification**: categorize outlets (mainstream/alternative, partisan lean) to identify narrative bias.
+- **Event type tagging**: auto-classify articles as Executive Action, Court Ruling, Legislative, Protest, Statement, etc.
+- **Citation network**: track article references/citations to build influence graph.
 - **Summarize clusters**: create abstractive summary of each cluster (e.g., Pegasus‑small or TextRank extractive to start).
-- **Alerts**: weekly surge detector → email/markdown digest.
+- **Export digest**: weekly markdown/email digest of top storylines, surges, predictions.
 - **Quote extraction**: identify quotes + speakers; build a "quote board" UI.
 - **Wikidata linking**: disambiguate entities; enrich with descriptions/logos.
-- **Exports**: CSV/PNG of charts; newsletter builder for top stories.
 
 ---
 
-## 14) Acceptance Criteria (MVP)
+## 14) Acceptance Criteria
 
+**P1 Complete (MVP)**
 - Upload CSV → ingest succeeds; dedups handled.
 - `/api/umap` returns ≥ N points with cluster_id for ≥ 80% of articles.
 - Galaxy view renders in < 2s on 2k points; hover + click work.
 - Timeline brush filters galaxy points live.
 - For a selected article, `/api/similar/:id` returns ≥ 5 items with cosine + shared entities/terms.
-- Entity network displays with degree filter; clicking a node lists linked articles.
+
+**P2 Goals (Narrative Intelligence)**
+- NER extracts entities from ≥80% of articles; entity timeline view works.
+- Storyline threading groups articles into ≥3 tiers; storylines view renders.
+- Causal chains detected for known policy events (e.g., EO → Court → Ruling → Impact).
+- Entity roles classified with ≥60% confidence on sample set.
+- Dashboard shows active/dormant storylines, recent alerts, key actors.
+
+**P3 Goals (Monitoring)**
+- Surge detection triggers alerts within 24h of actual surges.
+- Dormant story reactivation alerts appear within 6h of first new article.
+- Cross-domain bridge articles identified and visualized.
+- Dashboard loads state-of-the-world summary in <3s.
+
+**P4 Goals (Prediction)**
+- Narrative continuation suggestions have ≥30% accuracy on test set.
+- Event impact estimation correlates with actual article volume (R² ≥ 0.4).
 
 ---
 
@@ -363,39 +499,52 @@ repo/
     api/
       articles.py
       clusters.py
-      graph.py
-      search.py
+      similar.py
+      timeline.py
+      umap.py
+      storylines.py       # NEW: story arc endpoints
+      causal_chains.py    # NEW: causal chain endpoints
+      entities.py         # NEW: entity tracking endpoints
+      monitoring.py       # NEW: alerts & anomaly detection
+      dashboard.py        # NEW: state-of-the-world summary
     services/
       ingest.py
       embeddings.py
       clustering.py
-      ner.py
+      ner.py              # NEW: NER implementation + entity roles
       labeling.py
-      umap.py
-    models/
-      db.py                # SQLAlchemy setup
-      schema.sql           # migrations
-    data/
-      faiss.index
-      umap.json
-      clusters.json
+      umap_projection.py
+      storylines.py       # NEW: multi-tier storyline threading
+      causal_chains.py    # NEW: event chain detection
+      monitoring.py       # NEW: anomaly/surge detection
+      dashboard.py        # NEW: aggregate stats
+    db.py                 # SQLite setup and schema
+    config.py             # Configuration
     tests/
-  frontend/
+  static/
     index.html
-    assets/
+    css/
       styles.css
-    src/
-      main.ts              # boot + router
-      api.ts               # fetch helpers
+    js/
+      main.js
+      api.js
       views/
-        galaxy.ts
-        timeline.ts
-        entityGraph.ts
-        list.ts
-      components/
-        detailsPanel.ts
-        filterPanel.ts
-    vite.config.ts
+        galaxy.js
+        timeline.js
+        list.js
+        storylines.js     # NEW: river plot
+        chains.js         # NEW: causal graph
+        dashboard.js      # NEW: monitoring view
+        entityTimeline.js # NEW: entity track view
+  data/
+    faiss.index
+    faiss_mapping.npy
+    summarized_output.csv
+  tools/
+    ingest_csv.py
+    run_pipeline.py
+  requirements.txt
+  pytest.ini
 ```
 
 ---
@@ -403,11 +552,16 @@ repo/
 ## 17) Implementation Notes & Defaults
 
 - **Similarity threshold**: start at 0.60; expose via `.env`.
+- **Storyline tiers**: Tier 1 ≥0.85, Tier 2 0.65-0.84, Tier 3 0.50-0.64.
+- **Temporal windows**: Tier 1 ±3 days, Tier 2 ±7 days.
 - **Clustering**: HDBSCAN `min_cluster_size=8`, `min_samples=1`; seed UMAP for stability.
 - **UMAP**: `n_neighbors=15`, `min_dist=0.1`, `metric='cosine'`.
 - **KeyBERT**: top 10 per cluster; keep top 3 as labels.
-- **Entity filtering**: drop stop‑entities (`United States`, `Monday`, etc.).
+- **Entity filtering**: drop stop‑entities (`United States`, `Monday`, `America`, etc.).
 - **FTS5**: `tokenize = porter unicode61`.
+- **Causal chain threshold**: similarity 0.45-0.70 with shared entities + temporal order.
+- **Surge detection**: week-over-week growth >50% triggers alert.
+- **Dormant threshold**: storyline with no articles >14 days = dormant.
 
 ---
 
@@ -417,6 +571,8 @@ repo/
 - Any specific outlets/entities to whitelist or blacklist?
 - Preferred chart palettes / accessibility constraints (high contrast)?
 - Export formats needed (CSV/PNG/PDF)?
+- What constitutes a "surge" for your use case? (% growth threshold)
+- How far back should predictive models look? (window size for pattern matching)
 
 ---
 
@@ -431,5 +587,16 @@ repo/
 
 ---
 
-This spec is intentionally practical and incremental so we can ship value quickly (Galaxy + Timeline), then deepen (Entity network, Storylines, Alluvial) without re‑architecting.
+## 20) Phase Implementation Guides
+
+See separate design documents for detailed implementation:
+- `docs/phase2-storylines.md` - Story Arc Detection implementation
+- `docs/phase2-causal-chains.md` - Causal Chain Discovery implementation
+- `docs/phase2-entities.md` - Entity Tracking & NER implementation
+- `docs/phase3-monitoring.md` - Anomaly Detection & Monitoring implementation
+- `docs/phase3-dashboard.md` - State-of-the-World Dashboard implementation
+
+---
+
+This spec is intentionally practical and incremental so we can ship value quickly (Galaxy + Timeline), then deepen into narrative intelligence (Storylines, Causal Chains, Monitoring) without re‑architecting.
 
