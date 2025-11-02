@@ -105,10 +105,30 @@ function switchView(viewName) {
         loadArticles();
     } else if (viewName === 'galaxy') {
         galaxyView.load();
+        // Resize chart after a brief delay to ensure container is visible
+        setTimeout(() => galaxyView.resize(), 100);
     } else if (viewName === 'timeline') {
         timelineView.load();
+        // Resize chart after a brief delay to ensure container is visible
+        setTimeout(() => timelineView.resize(), 100);
     }
 }
+
+// Handle article selection events from galaxy view
+document.addEventListener('article-selected', (e) => {
+    const articleId = e.detail.articleId;
+    selectArticleById(articleId);
+});
+
+// Handle window resize for charts
+window.addEventListener('resize', () => {
+    if (appState.currentView === 'galaxy' && galaxyView) {
+        galaxyView.resize();
+    }
+    if (appState.currentView === 'timeline' && timelineView) {
+        timelineView.resize();
+    }
+});
 
 /**
  * Apply filters and reload articles
@@ -283,9 +303,11 @@ function selectArticle(article) {
 /**
  * Show article details in right panel
  */
-function showArticleDetails(article) {
+async function showArticleDetails(article) {
     const detailsEl = document.getElementById('article-details');
-    detailsEl.innerHTML = `
+    
+    // Show basic article info immediately
+    let html = `
         <div class="article-detail active">
             <h3>${escapeHtml(article.title)}</h3>
             <div class="meta">
@@ -294,8 +316,92 @@ function showArticleDetails(article) {
             </div>
             <div class="summary">${escapeHtml(article.summary || 'No summary available.')}</div>
             <a href="${escapeHtml(article.url)}" target="_blank" class="url">Read full article →</a>
-        </div>
     `;
+    
+    // Load similar articles
+    try {
+        const similarData = await api.getSimilar(article.id, 5);
+        
+        if (similarData.items && similarData.items.length > 0) {
+            html += `
+                <div class="similar-articles" style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid #e2e8f0;">
+                    <h4 style="margin-bottom: 1rem;">Similar Articles</h4>
+            `;
+            
+            similarData.items.forEach(item => {
+                html += `
+                    <div class="similar-item" style="margin-bottom: 1.5rem; padding: 1rem; background: #f8fafc; border-radius: 0.5rem;">
+                        <h5 style="margin: 0 0 0.5rem 0; font-size: 1rem;">
+                            <a href="#" onclick="window.selectArticleById(${item.id}); return false;" style="color: var(--primary-color); text-decoration: none;">
+                                ${escapeHtml(item.title)}
+                            </a>
+                        </h5>
+                        <div class="why-related" style="font-size: 0.875rem; color: #64748b;">
+                `;
+                
+                // Show explain-why information
+                if (item.cosine !== null && item.cosine !== undefined) {
+                    html += `<div style="margin-bottom: 0.5rem;">
+                        <strong>Similarity:</strong> ${(item.cosine * 100).toFixed(1)}%
+                    </div>`;
+                }
+                
+                if (item.why) {
+                    if (item.why.shared_terms && item.why.shared_terms.length > 0) {
+                        html += `<div style="margin-bottom: 0.5rem;">
+                            <strong>Shared terms:</strong> ${escapeHtml(item.why.shared_terms.slice(0, 5).join(', '))}
+                        </div>`;
+                    }
+                    
+                    if (item.why.date_proximity_days !== null && item.why.date_proximity_days !== undefined) {
+                        html += `<div style="margin-bottom: 0.5rem;">
+                            <strong>Date proximity:</strong> ${item.why.date_proximity_days} day${item.why.date_proximity_days !== 1 ? 's' : ''}
+                        </div>`;
+                    }
+                    
+                    if (item.why.same_outlet) {
+                        html += `<div style="margin-bottom: 0.5rem;">
+                            <span style="background: #dbeafe; color: #1e40af; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem;">
+                                Same outlet
+                            </span>
+                        </div>`;
+                    }
+                }
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += `</div>`;
+        }
+    } catch (error) {
+        console.error('Error loading similar articles:', error);
+        // Don't show error to user, just skip similar articles section
+    }
+    
+    html += `</div>`;
+    detailsEl.innerHTML = html;
+}
+
+/**
+ * Select article by ID (for similar articles links)
+ */
+async function selectArticleById(articleId) {
+    try {
+        const response = await api.getArticles({ limit: 1000 });
+        const article = response.items.find(a => a.id === articleId);
+        if (article) {
+            selectArticle(article);
+        } else {
+            // If not in current page, fetch directly
+            // For now, just log
+            console.log('Article not found in current page:', articleId);
+        }
+    } catch (error) {
+        console.error('Error selecting article:', error);
+    }
 }
 
 /**
@@ -324,6 +430,7 @@ function formatDate(dateStr) {
 // Expose functions for views and pagination
 window.appState = appState;
 window.selectArticle = selectArticle;
+window.selectArticleById = selectArticleById;
 window.goToPage = goToPage;
 
 // Initialize on DOM load

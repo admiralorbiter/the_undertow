@@ -53,6 +53,7 @@ Thumbs.db
 data/*.index
 data/*.json
 data/faiss.index
+data/models/
 
 # Test coverage
 htmlcov/

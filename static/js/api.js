@@ -43,19 +43,52 @@ export const api = {
     },
     
     /**
-     * Get clusters (placeholder for future)
+     * Get clusters
      */
     async getClusters() {
-        // TODO: Implement when cluster endpoint is ready
-        throw new Error('Not implemented yet');
+        const response = await fetch(`${API_BASE}/clusters`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.statusText}`);
+        }
+        return await response.json();
     },
     
     /**
-     * Get UMAP data (placeholder for future)
+     * Get UMAP projection data
      */
     async getUMAP() {
-        // TODO: Implement when UMAP endpoint is ready
-        throw new Error('Not implemented yet');
+        const response = await fetch(`${API_BASE}/umap`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.statusText}`);
+        }
+        return await response.json();
+    },
+    
+    /**
+     * Get timeline data
+     */
+    async getTimeline(params = {}) {
+        const queryString = new URLSearchParams();
+        if (params.cluster_id) queryString.append('cluster_id', params.cluster_id);
+        if (params.group_by) queryString.append('group_by', params.group_by);
+        
+        const url = `${API_BASE}/timeline${queryString.toString() ? '?' + queryString.toString() : ''}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.statusText}`);
+        }
+        return await response.json();
+    },
+    
+    /**
+     * Get similar articles
+     */
+    async getSimilar(articleId, k = 10) {
+        const response = await fetch(`${API_BASE}/similar/${articleId}?k=${k}`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.statusText}`);
+        }
+        return await response.json();
     }
 };
 

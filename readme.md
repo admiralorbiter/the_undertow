@@ -72,7 +72,27 @@ This project transforms a CSV of news articles into a browsable knowledge map. I
 
    Or use the API endpoint after starting the server (see below).
 
-6. **Run the application**
+6. **Run the ML pipeline (P1 features)**
+
+   After ingesting articles, run the pipeline to generate embeddings, clusters, and visualizations:
+
+   ```bash
+   # Run all pipeline steps (embeddings → similarity → clustering → UMAP → labeling)
+   python tools/run_pipeline.py
+
+   # Run from a specific step
+   python tools/run_pipeline.py --step 4
+
+   # Force recompute everything
+   python tools/run_pipeline.py --force
+
+   # Check pipeline status
+   python tools/run_pipeline.py --status
+   ```
+
+   Note: The first run will download ML models (sentence-transformers, etc.) which may take a few minutes.
+
+7. **Run the application**
 
    ```bash
    python app.py
@@ -80,9 +100,14 @@ This project transforms a CSV of news articles into a browsable knowledge map. I
 
    The server will start on `http://127.0.0.1:5000`
 
-7. **Open in your browser**
+8. **Open in your browser**
 
    Navigate to `http://localhost:5000` to see the interface.
+   
+   - Switch between **List**, **Galaxy**, and **Timeline** views
+   - Click articles in the Galaxy view to see similarity relationships
+   - View the timeline to see article distribution over time
+   - Check the details panel for explain-why information about similar articles
 
 ### Ingest CSV via API
 

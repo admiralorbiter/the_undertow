@@ -233,4 +233,201 @@ class TestDatabaseSchema:
         assert result is None, "Article should be deleted"
         
         conn.close()
+    
+    def test_init_db_creates_p1_tables(self, temp_db, monkeypatch):
+        """Test that init_db creates all P1 tables."""
+        from backend.config import Config
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        # Check all P1 tables exist
+        p1_tables = ['embeddings', 'similarities', 'clusters', 'entities', 'article_entities', 'vector_meta']
+        for table_name in p1_tables:
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name=?
+            """, (table_name,))
+            result = cursor.fetchone()
+            assert result is not None, f"{table_name} table should exist"
+        
+        conn.close()
+    
+    def test_articles_table_has_umap_columns(self, temp_db, monkeypatch):
+        """Test that articles table has umap_x and umap_y columns."""
+        from backend.config import Config
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("PRAGMA table_info(articles)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+        
+        assert 'umap_x' in columns, "umap_x column should exist"
+        assert 'umap_y' in columns, "umap_y column should exist"
+        
+        conn.close()
+    
+    def test_embeddings_table_structure(self, temp_db, monkeypatch):
+        """Test embeddings table structure."""
+        from backend.config import Config
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("PRAGMA table_info(embeddings)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+        
+        assert 'article_id' in columns
+        assert 'vec' in columns
+        assert columns['article_id'] == 'INTEGER'
+        assert columns['vec'] == 'BLOB'
+        
+        conn.close()
+    
+    def test_similarities_table_structure(self, temp_db, monkeypatch):
+        """Test similarities table structure."""
+        from backend.config import Config
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("PRAGMA table_info(similarities)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+        
+        assert 'src_id' in columns
+        assert 'dst_id' in columns
+        assert 'cosine' in columns
+        assert 'shared_entities' in columns
+        assert 'shared_terms' in columns
+        
+        conn.close()
+    
+    def test_clusters_table_structure(self, temp_db, monkeypatch):
+        """Test clusters table structure."""
+        from backend.config import Config
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("PRAGMA table_info(clusters)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+        
+        assert 'id' in columns
+        assert 'label' in columns
+        assert 'size' in columns
+        assert 'score' in columns
+        
+        conn.close()
+    
+    def test_entities_table_structure(self, temp_db, monkeypatch):
+        """Test entities table structure."""
+        from backend.config import Config
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("PRAGMA table_info(entities)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+        
+        assert 'id' in columns
+        assert 'name' in columns
+        assert 'type' in columns
+        
+        # Check that type has CHECK constraint
+        cursor.execute("""
+            SELECT sql FROM sqlite_master 
+            WHERE type='table' AND name='entities'
+        """)
+        sql = cursor.fetchone()[0]
+        assert 'CHECK' in sql.upper()
+        assert 'PERSON' in sql
+        assert 'ORG' in sql
+        
+        conn.close()
+    
+    def test_article_entities_table_structure(self, temp_db, monkeypatch):
+        """Test article_entities table structure."""
+        from backend.config import Config
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("PRAGMA table_info(article_entities)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+        
+        assert 'article_id' in columns
+        assert 'entity_id' in columns
+        assert 'weight' in columns
+        
+        conn.close()
+    
+    def test_vector_meta_table_structure(self, temp_db, monkeypatch):
+        """Test vector_meta table structure."""
+        from backend.config import Config
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("PRAGMA table_info(vector_meta)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+        
+        assert 'version' in columns
+        assert 'dim' in columns
+        assert 'count' in columns
+        assert 'updated_at' in columns
+        
+        conn.close()
+    
+    def test_p1_indexes_created(self, temp_db, monkeypatch):
+        """Test that P1 indexes are created."""
+        from backend.config import Config
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='index' AND name LIKE 'idx_%'
+        """)
+        indexes = [row[0] for row in cursor.fetchall()]
+        
+        # Check P1 indexes
+        assert 'idx_articles_cluster' in indexes
+        assert 'idx_embeddings_article' in indexes
+        assert 'idx_similarities_src' in indexes
+        assert 'idx_similarities_dst' in indexes
+        assert 'idx_entities_name' in indexes
+        assert 'idx_entities_type' in indexes
+        
+        conn.close()
+    
+    def test_migration_adds_umap_columns(self, temp_db, monkeypatch):
+        """Test that migration adds umap_x and umap_y to existing articles table."""
+        from backend.config import Config
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        # Create articles table without umap columns (simulating old schema)
+        cursor.execute("DROP TABLE IF EXISTS articles")
+        cursor.execute("""
+            CREATE TABLE articles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                summary TEXT,
+                url TEXT UNIQUE NOT NULL,
+                outlet TEXT,
+                date TEXT NOT NULL,
+                date_bin TEXT,
+                cluster_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        conn.close()
+        
+        # Run init_db again (should add umap columns)
+        init_db()
+        
+        # Verify columns were added
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(articles)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+        
+        assert 'umap_x' in columns, "Migration should add umap_x column"
+        assert 'umap_y' in columns, "Migration should add umap_y column"
+        
+        conn.close()
 

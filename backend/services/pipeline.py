@@ -1,0 +1,310 @@
+"""
+NLP & Analytics Pipeline Orchestrator
+
+Runs the 9-step pipeline (steps 3-9) to compute embeddings, similarities, clusters, UMAP, etc.
+Steps 1-2 (ingest and FTS) are handled separately during CSV ingestion.
+"""
+import logging
+from backend.db import get_db
+from backend.config import Config
+
+logger = logging.getLogger(__name__)
+
+
+class PipelineRunner:
+    """
+    Orchestrates the NLP & Analytics pipeline (steps 3-9).
+    
+    Steps:
+    3. Embeddings - Generate sentence embeddings for all articles
+    4. Similarity Graph - Build similarity graph using FAISS
+    5. Clustering - Cluster articles using HDBSCAN
+    6. UMAP - Project to 2D for visualization
+    7. Keyword/Labeling - Generate cluster labels using KeyBERT
+    8. NER - Extract named entities (P2, but structure here)
+    9. Storylines - Group near-duplicate articles (P2)
+    """
+    
+    def __init__(self):
+        """Initialize pipeline runner."""
+        self.steps_completed = set()
+        
+    def step_embeddings(self, force_recompute=False):
+        """
+        Step 3: Generate embeddings for all articles.
+        
+        Model: sentence-transformers/all-MiniLM-L6-v2 (384-dim)
+        Text: title + " \n " + summary
+        Persists: float32 vectors to embeddings table, builds FAISS index
+        
+        Args:
+            force_recompute: If True, recompute even if embeddings exist
+            
+        Returns:
+            dict with stats: {'processed': int, 'skipped': int, 'errors': int, 'index_built': bool}
+        """
+        logger.info("Step 3: Generating embeddings...")
+        
+        from backend.services.embeddings import EmbeddingService
+        
+        service = EmbeddingService()
+        
+        # Generate embeddings
+        stats = service.generate_embeddings(force_recompute=force_recompute)
+        
+        # Build FAISS index
+        index_stats = service.build_faiss_index(force_rebuild=force_recompute)
+        
+        stats.update(index_stats)
+        stats['status'] = 'completed'
+        
+        if stats['processed'] > 0 or index_stats.get('index_built', False):
+            self.steps_completed.add(3)
+        
+        return stats
+    
+    def step_similarity_graph(self, force_recompute=False):
+        """
+        Step 4: Build similarity graph.
+        
+        For each article, find top-k neighbors above similarity threshold.
+        Computes shared entities/terms as evidence (when available).
+        
+        Args:
+            force_recompute: If True, recompute even if similarities exist
+            
+        Returns:
+            dict with stats: {'edges_created': int, 'skipped': int, 'errors': int}
+        """
+        logger.info("Step 4: Building similarity graph...")
+        
+        from backend.services.similarity import SimilarityService
+        
+        service = SimilarityService()
+        stats = service.build_similarity_graph(force_recompute=force_recompute)
+        
+        stats['status'] = 'completed'
+        
+        if stats['edges_created'] > 0:
+            self.steps_completed.add(4)
+        
+        return stats
+    
+    def step_clustering(self, force_recompute=False):
+        """
+        Step 5: Cluster articles using HDBSCAN.
+        
+        Uses HDBSCAN with cosine metric, min_cluster_size=8.
+        Falls back to k-means with silhouette score if HDBSCAN fails.
+        Updates articles.cluster_id and clusters table.
+        
+        Args:
+            force_recompute: If True, recompute even if clusters exist
+            
+        Returns:
+            dict with stats: {'clusters_created': int, 'articles_clustered': int, 'noise': int, 'method': str}
+        """
+        logger.info("Step 5: Clustering articles...")
+        
+        from backend.services.clustering import ClusteringService
+        
+        service = ClusteringService()
+        stats = service.cluster_articles(force_recompute=force_recompute)
+        
+        if stats.get('status') != 'skipped' and stats.get('clusters_created', 0) > 0:
+            self.steps_completed.add(5)
+        
+        return stats
+    
+    def step_umap(self, force_recompute=False):
+        """
+        Step 6: UMAP 2D projection.
+        
+        Projects embeddings to 2D for visualization.
+        Stores x, y coordinates in articles table (umap_x, umap_y).
+        
+        Args:
+            force_recompute: If True, recompute even if UMAP coords exist
+            
+        Returns:
+            dict with stats: {'points_projected': int, 'status': str}
+        """
+        logger.info("Step 6: Computing UMAP projection...")
+        
+        from backend.services.umap_projection import UMAPService
+        
+        service = UMAPService()
+        stats = service.compute_umap_projection(force_recompute=force_recompute)
+        
+        if stats.get('status') != 'skipped' and stats.get('points_projected', 0) > 0:
+            self.steps_completed.add(6)
+        
+        return stats
+    
+    def step_keywords(self, force_recompute=False):
+        """
+        Step 7: Generate cluster labels using KeyBERT.
+        
+        For each cluster, extracts top keywords and creates labels.
+        Updates clusters.label field.
+        
+        Args:
+            force_recompute: If True, recompute even if labels exist
+            
+        Returns:
+            dict with stats: {'clusters_labeled': int, 'errors': int, 'status': str}
+        """
+        logger.info("Step 7: Generating cluster labels...")
+        
+        from backend.services.labeling import LabelingService
+        
+        service = LabelingService()
+        stats = service.label_all_clusters(force_recompute=force_recompute)
+        
+        if stats.get('status') != 'skipped' and stats.get('clusters_labeled', 0) > 0:
+            self.steps_completed.add(7)
+        
+        return stats
+    
+    def step_ner(self, force_recompute=False):
+        """
+        Step 8: Named Entity Recognition (P2, but structure here).
+        
+        Extracts PERSON, ORG, GPE, LOC entities from articles.
+        Populates entities and article_entities tables.
+        
+        Args:
+            force_recompute: If True, recompute even if entities exist
+            
+        Returns:
+            dict with stats: {'articles_processed': int, 'entities_found': int}
+        """
+        logger.info("Step 8: Extracting named entities...")
+        # TODO: Implement in P2
+        # - Load spaCy model (en_core_web_sm)
+        # - For each article:
+        #   - Run NER on title + summary
+        #   - Extract PERSON, ORG, GPE, LOC entities
+        #   - Upsert to entities table
+        #   - Link to articles via article_entities
+        return {'status': 'not_implemented', 'articles_processed': 0, 'entities_found': 0}
+    
+    def step_storylines(self, force_recompute=False):
+        """
+        Step 9: Storyline threading (P2, but structure here).
+        
+        Groups near-duplicate articles using Union-Find.
+        Criteria: cosine >= 0.85 AND date difference <= 3 days.
+        
+        Args:
+            force_recompute: If True, recompute even if storylines exist
+            
+        Returns:
+            dict with stats: {'storylines_created': int, 'articles_grouped': int}
+        """
+        logger.info("Step 9: Grouping storylines...")
+        # TODO: Implement in P2
+        # - Load similarities with cosine >= 0.85
+        # - Filter by date difference <= 3 days
+        # - Run Union-Find to group articles
+        # - Store storyline groups (could add storylines table later)
+        return {'status': 'not_implemented', 'storylines_created': 0, 'articles_grouped': 0}
+    
+    def run_full_pipeline(self, start_from_step=3, force_recompute=False):
+        """
+        Run the full pipeline (steps 3-9).
+        
+        Args:
+            start_from_step: Which step to start from (3-9)
+            force_recompute: If True, recompute even if step was already completed
+            
+        Returns:
+            dict with results from each step
+        """
+        logger.info(f"Running full pipeline starting from step {start_from_step}")
+        
+        results = {}
+        steps = {
+            3: self.step_embeddings,
+            4: self.step_similarity_graph,
+            5: self.step_clustering,
+            6: self.step_umap,
+            7: self.step_keywords,
+            8: self.step_ner,
+            9: self.step_storylines
+        }
+        
+        for step_num in range(start_from_step, 10):
+            if step_num in steps:
+                try:
+                    result = steps[step_num](force_recompute=force_recompute)
+                    results[f'step_{step_num}'] = result
+                    if result.get('status') != 'not_implemented':
+                        self.steps_completed.add(step_num)
+                except Exception as e:
+                    logger.error(f"Error in step {step_num}: {e}", exc_info=True)
+                    results[f'step_{step_num}'] = {'status': 'error', 'error': str(e)}
+        
+        return results
+    
+    def get_pipeline_status(self):
+        """
+        Get status of pipeline execution.
+        
+        Returns:
+            dict with status info:
+            {
+                'steps_completed': [list of step numbers],
+                'embeddings_count': int,
+                'similarities_count': int,
+                'clusters_count': int,
+                'articles_with_umap': int,
+                'clusters_labeled': int,
+                'has_faiss_index': bool
+            }
+        """
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        status = {
+            'steps_completed': list(self.steps_completed),
+            'embeddings_count': 0,
+            'similarities_count': 0,
+            'clusters_count': 0,
+            'articles_with_umap': 0,
+            'clusters_labeled': 0,
+            'has_faiss_index': False
+        }
+        
+        try:
+            # Count embeddings
+            cursor.execute("SELECT COUNT(*) FROM embeddings")
+            status['embeddings_count'] = cursor.fetchone()[0]
+            
+            # Count similarities
+            cursor.execute("SELECT COUNT(*) FROM similarities")
+            status['similarities_count'] = cursor.fetchone()[0]
+            
+            # Count clusters
+            cursor.execute("SELECT COUNT(*) FROM clusters")
+            status['clusters_count'] = cursor.fetchone()[0]
+            
+            # Count articles with UMAP coords
+            cursor.execute("SELECT COUNT(*) FROM articles WHERE umap_x IS NOT NULL AND umap_y IS NOT NULL")
+            status['articles_with_umap'] = cursor.fetchone()[0]
+            
+            # Count clusters with labels
+            cursor.execute("SELECT COUNT(*) FROM clusters WHERE label IS NOT NULL AND label != ''")
+            status['clusters_labeled'] = cursor.fetchone()[0]
+            
+            # Check if FAISS index exists
+            from pathlib import Path
+            status['has_faiss_index'] = Path(Config.FAISS_INDEX_PATH).exists()
+            
+        except Exception as e:
+            logger.error(f"Error getting pipeline status: {e}")
+        finally:
+            conn.close()
+        
+        return status
+
