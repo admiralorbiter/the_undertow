@@ -30,9 +30,17 @@ def init_db():
             outlet TEXT,
             date TEXT NOT NULL,
             date_bin TEXT,
+            cluster_id INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    
+    # Add cluster_id column if it doesn't exist (migration for existing databases)
+    try:
+        cursor.execute("ALTER TABLE articles ADD COLUMN cluster_id INTEGER")
+    except sqlite3.OperationalError:
+        # Column already exists, which is fine
+        pass
     
     # Create full-text search virtual table (FTS5)
     cursor.execute("""

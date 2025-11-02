@@ -54,3 +54,13 @@ data/*.index
 data/*.json
 data/faiss.index
 
+# Test coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/
+test_*.db
+*.db-journal
+

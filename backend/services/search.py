@@ -30,47 +30,75 @@ def search_articles(query, date_from='', date_to='', outlet='', limit=100, offse
     if ' ' in fts_query:
         fts_query = f'"{fts_query}"'  # Phrase search
     
-    # Build conditions (using fts alias)
-    conditions = ["fts MATCH ?"]
-    params = [fts_query]
+    # Build conditions
+    conditions = []
+    params = []
+    has_query = query and fts_query.strip()
+    
+    # Only add FTS5 match if query is not empty
+    if has_query:
+        conditions.append("articles_fts MATCH ?")
+        params.append(fts_query)
     
     # Join with articles table for additional filters
+    # Use alias 'a.' when joining with FTS, otherwise use direct column names
+    col_prefix = "a." if has_query else ""
     if date_from:
-        conditions.append("a.date >= ?")
+        conditions.append(f"{col_prefix}date >= ?")
         params.append(date_from)
     
     if date_to:
-        conditions.append("a.date <= ?")
+        conditions.append(f"{col_prefix}date <= ?")
         params.append(date_to)
     
     if outlet:
-        conditions.append("a.outlet = ?")
+        conditions.append(f"{col_prefix}outlet = ?")
         params.append(outlet)
     
-    where_clause = "WHERE " + " AND ".join(conditions)
+    where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
     
     if count_only:
-        cursor.execute(f"""
-            SELECT COUNT(DISTINCT a.id)
-            FROM articles_fts fts
-            JOIN articles a ON fts.rowid = a.id
-            {where_clause}
-        """, params)
+        # If no query, just count from articles table
+        if not query or not conditions:
+            query_sql = "SELECT COUNT(*) FROM articles"
+            if conditions:
+                query_sql += " " + where_clause
+            cursor.execute(query_sql, params)
+        else:
+            cursor.execute(f"""
+                SELECT COUNT(DISTINCT a.id)
+                FROM articles_fts
+                JOIN articles a ON articles_fts.rowid = a.id
+                {where_clause}
+            """, params)
         count = cursor.fetchone()[0]
         conn.close()
         return count
     
     # Get matching articles with ranking
     query_params = params + [limit, offset]
-    cursor.execute(f"""
-        SELECT a.id, a.title, a.summary, a.url, a.outlet, a.date, a.date_bin,
-               bm25(fts) as rank
-        FROM articles_fts fts
-        JOIN articles a ON fts.rowid = a.id
-        {where_clause}
-        ORDER BY rank
-        LIMIT ? OFFSET ?
-    """, query_params)
+    
+    # If no query, just select from articles table
+    if not query or not conditions:
+        query_sql = f"""
+            SELECT id, title, summary, url, outlet, date, date_bin,
+                   0 as rank
+            FROM articles
+        """
+        if conditions:
+            query_sql += " " + where_clause
+        query_sql += " ORDER BY date DESC, id DESC LIMIT ? OFFSET ?"
+        cursor.execute(query_sql, query_params)
+    else:
+        cursor.execute(f"""
+            SELECT a.id, a.title, a.summary, a.url, a.outlet, a.date, a.date_bin,
+                   bm25(articles_fts) as rank
+            FROM articles_fts
+            JOIN articles a ON articles_fts.rowid = a.id
+            {where_clause}
+            ORDER BY rank
+            LIMIT ? OFFSET ?
+        """, query_params)
     
     results = cursor.fetchall()
     conn.close()

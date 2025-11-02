@@ -40,9 +40,23 @@ async function init() {
     setupEventListeners();
     
     // Load initial data
-    await loadArticles();
-    
-    console.log('Application initialized');
+    try {
+        await loadArticles();
+        console.log('Application initialized successfully');
+    } catch (error) {
+        console.error('Failed to load initial articles:', error);
+        const listEl = document.getElementById('articles-list');
+        if (listEl) {
+            listEl.innerHTML = `
+                <div style="text-align: center; padding: 2rem; color: #ef4444;">
+                    <p><strong>Error loading articles</strong></p>
+                    <p style="font-size: 0.9rem; margin-top: 0.5rem;">
+                        Make sure the backend is running and the database is initialized.
+                    </p>
+                </div>
+            `;
+        }
+    }
 }
 
 /**
@@ -134,6 +148,13 @@ function clearFilters() {
  * Load articles from API
  */
 async function loadArticles() {
+    const listEl = document.getElementById('articles-list');
+    
+    // Show loading state
+    if (listEl) {
+        listEl.innerHTML = '<p style="text-align: center; color: #64748b; padding: 2rem;">Loading articles...</p>';
+    }
+    
     try {
         const params = {
             ...appState.filters,
@@ -145,12 +166,20 @@ async function loadArticles() {
         
         appState.totalArticles = response.total;
         updateResultsCount();
+        updatePagination();
         
         listView.render(response.items);
         
     } catch (error) {
         console.error('Error loading articles:', error);
-        alert('Failed to load articles. Please try again.');
+        if (listEl) {
+            listEl.innerHTML = `
+                <div style="text-align: center; padding: 2rem; color: #ef4444;">
+                    <p><strong>Error loading articles</strong></p>
+                    <p style="font-size: 0.9rem; margin-top: 0.5rem;">${error.message || 'Please try again.'}</p>
+                </div>
+            `;
+        }
     }
 }
 
@@ -181,7 +210,61 @@ async function loadOutlets() {
  */
 function updateResultsCount() {
     const countEl = document.getElementById('results-count');
-    countEl.textContent = `${appState.totalArticles} article${appState.totalArticles !== 1 ? 's' : ''}`;
+    if (countEl) {
+        countEl.textContent = `${appState.totalArticles} article${appState.totalArticles !== 1 ? 's' : ''}`;
+    }
+}
+
+/**
+ * Update pagination controls
+ */
+function updatePagination() {
+    const paginationEl = document.getElementById('pagination');
+    if (!paginationEl) return;
+    
+    const totalPages = Math.ceil(appState.totalArticles / appState.pageSize);
+    const currentPage = appState.currentPage + 1;
+    
+    if (totalPages <= 1) {
+        paginationEl.innerHTML = '';
+        return;
+    }
+    
+    let html = '';
+    
+    // Previous button
+    html += `<button class="pagination-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="window.goToPage(${currentPage - 2})">Previous</button>`;
+    
+    // Page numbers (show current and a few around it)
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+    
+    if (startPage > 1) {
+        html += `<button class="pagination-btn" onclick="window.goToPage(0)">1</button>`;
+        if (startPage > 2) html += `<span style="padding: 0.5rem;">...</span>`;
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        html += `<button class="pagination-btn" ${i === currentPage ? 'style="background: var(--primary-color); color: white;"' : ''} onclick="window.goToPage(${i - 1})">${i}</button>`;
+    }
+    
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) html += `<span style="padding: 0.5rem;">...</span>`;
+        html += `<button class="pagination-btn" onclick="window.goToPage(${totalPages - 1})">${totalPages}</button>`;
+    }
+    
+    // Next button
+    html += `<button class="pagination-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="window.goToPage(${currentPage})">Next</button>`;
+    
+    paginationEl.innerHTML = html;
+}
+
+/**
+ * Go to a specific page
+ */
+function goToPage(page) {
+    appState.currentPage = Math.max(0, Math.min(page, Math.ceil(appState.totalArticles / appState.pageSize) - 1));
+    loadArticles();
 }
 
 /**
@@ -238,9 +321,10 @@ function formatDate(dateStr) {
     }
 }
 
-// Expose selectArticle for views
+// Expose functions for views and pagination
 window.appState = appState;
 window.selectArticle = selectArticle;
+window.goToPage = goToPage;
 
 // Initialize on DOM load
 if (document.readyState === 'loading') {
