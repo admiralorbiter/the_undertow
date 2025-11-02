@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Relationship Explorer</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>News Relationship Explorer</h1>
+            <p class="subtitle">Explore relationships between news articles through interactive visualizations</p>
+        </header>
+
+        <div class="main-layout">
+            <!-- Left: Filters Panel -->
+            <aside class="filters-panel">
+                <section class="filter-section">
+                    <h2>Search & Filters</h2>
+                    
+                    <div class="filter-group">
+                        <label for="search-query">Search</label>
+                        <input type="text" id="search-query" placeholder="Search articles..." />
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="date-from">From Date</label>
+                        <input type="date" id="date-from" />
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="date-to">To Date</label>
+                        <input type="date" id="date-to" />
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="outlet-filter">Outlet</label>
+                        <select id="outlet-filter">
+                            <option value="">All Outlets</option>
+                        </select>
+                    </div>
+
+                    <button id="apply-filters" class="btn-primary">Apply Filters</button>
+                    <button id="clear-filters" class="btn-secondary">Clear</button>
+                </section>
+
+                <section class="info-section">
+                    <h3>Results</h3>
+                    <div id="results-count">0 articles</div>
+                </section>
+            </aside>
+
+            <!-- Center: Main Visualization -->
+            <main class="viz-area">
+                <div class="view-tabs">
+                    <button class="tab active" data-view="list">List</button>
+                    <button class="tab" data-view="galaxy">Galaxy</button>
+                    <button class="tab" data-view="timeline">Timeline</button>
+                    <button class="tab" data-view="network">Network</button>
+                </div>
+
+                <div id="view-container">
+                    <div id="list-view" class="view active">
+                        <div id="articles-list"></div>
+                        <div id="pagination"></div>
+                    </div>
+                    <div id="galaxy-view" class="view">
+                        <p>Galaxy view (UMAP scatter) - Coming soon</p>
+                    </div>
+                    <div id="timeline-view" class="view">
+                        <p>Timeline view - Coming soon</p>
+                    </div>
+                    <div id="network-view" class="view">
+                        <p>Entity network view - Coming soon</p>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Right: Details Panel -->
+            <aside class="details-panel">
+                <h2>Article Details</h2>
+                <div id="article-details">
+                    <p class="placeholder">Select an article to view details</p>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <script type="module" src="/js/main.js"></script>
+</body>
+</html>
+
